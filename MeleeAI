@@ -1,0 +1,170 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.AI;
+
+public class MeleeAI : MonoBehaviour
+{
+    public SoundEffects soundEffects;
+        public UnityEngine.AI.NavMeshAgent agent;
+
+    public Transform player;
+
+    public LayerMask whatIsGround, whatIsPlayer;
+
+    [SerializeField]
+    public Rigidbody rb;
+        
+    //Patroling:
+    public Vector3 walkPoint;
+    bool walkPointSet;
+    public float walkPointRange;
+
+    //Attacking:
+    public float timeBetweenAttacks;
+    bool alreadyAttacked;  
+    public Transform attackPoint;  
+    public GameObject twoHSword;
+    public float attackDelay;
+
+    //States
+    public float sightRange, attackRange;
+    public bool playerInSightRange, playerInAttackRange;
+
+    
+    private void Awake(){
+        player = GameObject.Find("Player").transform;
+        agent = GetComponent<NavMeshAgent>();        
+    }
+    private void Update(){
+        //Check for sight and attack range
+        playerInSightRange = Physics.CheckSphere(transform.position, sightRange, whatIsPlayer);
+        playerInAttackRange = Physics.CheckSphere(transform.position, attackRange, whatIsPlayer);
+
+        //Modes:
+        if(!playerInSightRange && !playerInAttackRange) Patroling();
+        if (playerInSightRange && !playerInAttackRange) ChasePlayer();
+        if (playerInAttackRange && playerInSightRange) AttackPlayer();
+
+          VelocityCheck();     
+    }
+
+    private void VelocityCheck(){
+        var currentVel = rb.velocity;
+        if (currentVel.z > 5){        
+
+        rb.velocity = new Vector3(0,0,0);
+    }
+    }
+    private void Patroling(){
+        if (!walkPointSet) SearchWalkPoint();
+
+        if (walkPointSet)
+            agent.SetDestination(walkPoint);
+
+        Vector3 distanceToWalkPoint = transform.position - walkPoint;
+
+        //Walkingpoint reached
+        if (distanceToWalkPoint.magnitude < 1f)
+            walkPointSet = false;
+    }
+
+    private void SearchWalkPoint() {
+        //Calculate random point in range        
+        float randomZ = Random.Range(-walkPointRange, walkPointRange);
+        float randomX = Random.Range(-walkPointRange, walkPointRange);
+
+        walkPoint = new Vector3(transform.position.x + randomX, transform.position.y, transform.position.z + randomZ);
+
+        if (Physics.Raycast(walkPoint, -transform.up, 2f, whatIsGround))
+            walkPointSet = true;
+    }
+
+     private void ChasePlayer(){        
+        var whereIsPlayer = player.position;  
+        transform.LookAt(player);   
+        agent.SetDestination(whereIsPlayer);
+        StartCoroutine(StopMovement(5));
+       
+        
+    }
+
+     private void AttackPlayer(){
+        //Make sure enemy doesn't move
+        agent.SetDestination(transform.position);
+
+        transform.LookAt(player);
+
+        if (!alreadyAttacked){
+
+            //Melee Attack:
+             //Animation:
+            Animator anim = twoHSword.GetComponent<Animator>();
+            anim.SetTrigger("Attack"); 
+
+            //Attack
+            Invoke(nameof(MeleeAttack), attackDelay);
+            alreadyAttacked = true;
+            Invoke(nameof(ResetAttack), timeBetweenAttacks);
+        }
+    }
+
+    private void ResetAttack(){
+        alreadyAttacked = false;
+    }
+
+        void MeleeAttack(){    
+    //Detects Enemies Hit:
+    Collider[] hitPlayers = Physics.OverlapSphere(attackPoint.position, attackRange, whatIsPlayer);
+    
+       
+    //Damages Player(s):
+    foreach(Collider players in hitPlayers){
+                
+        if (players.GetComponent<HealthAndStats>() == null) {
+            return;
+        }
+
+        else if (players.GetComponent<PlayerControler>().isBlocking == true) {
+            soundEffects.Block();            
+        }
+
+        else if (players.GetComponent<PlayerControler>().isBlocking == false) {            
+            players.GetComponent<HealthAndStats>().TakeDamage(20);     
+
+            
+        }        
+    }
+}
+
+//Fixes OnCollision Errors:
+void OnCollsionEnter(Collider collider){
+    if(!playerInSightRange && !playerInAttackRange) Patroling(); 
+          
+
+} 
+
+void OnCollisionExit(Collision collider){
+    VelocityCheck();  
+    if (playerInSightRange && !playerInAttackRange) ChasePlayer();
+        if (playerInAttackRange && playerInSightRange) AttackPlayer();
+        
+}  
+
+void OnDrawGizmosSelected(){   
+
+    Gizmos.DrawWireSphere(attackPoint.position, attackRange);
+}
+
+public IEnumerator StopMovement(float delay){
+    yield return new WaitForSeconds(delay);
+    rb.velocity = new Vector3(0,0,0);
+    
+}
+
+
+}
+
+
+
+
